@@ -113,8 +113,24 @@ class LLMAgent:
         # Process response
         search_terms, data_sources, explanation = ResponseProcessor.process_search_terms(response)
         
+        # Log the raw types for debugging
         self.logger.info(f"Generated search terms: {search_terms}")
         self.logger.info(f"Recommended data sources: {data_sources}")
+        self.logger.debug(f"Search terms types: {[type(term) for term in search_terms]}")
+        self.logger.debug(f"Data sources types: {[type(source) for source in data_sources]}")
+        
+        # Ensure data_sources contains only strings, not lists
+        normalized_sources = []
+        for source in data_sources:
+            if isinstance(source, list):
+                self.logger.warning(f"Found nested list in data sources: {source}")
+                normalized_sources.extend(source)
+            else:
+                normalized_sources.append(source)
+        
+        if normalized_sources != data_sources:
+            self.logger.info(f"Normalized data sources: {normalized_sources}")
+            data_sources = normalized_sources
         
         return search_terms, data_sources, explanation
     
@@ -131,13 +147,65 @@ class LLMAgent:
         """
         all_datasets = []
         
+        # Log the input
+        self.logger.info(f"_search_multiple_sources called with data_sources: {data_sources}")
+        self.logger.info(f"data_sources type: {type(data_sources)}")
+        for i, source in enumerate(data_sources):
+            self.logger.info(f"data_source[{i}]: {source}, type: {type(source)}")
+            if isinstance(source, list):
+                for j, inner_source in enumerate(source):
+                    self.logger.info(f"data_source[{i}][{j}]: {inner_source}, type: {type(inner_source)}")
+        
+        # Ensure data_sources is a list of strings, not a list of lists
+        normalized_sources = []
+        for source in data_sources:
+            if isinstance(source, list):
+                # If it's a list, add each element individually
+                # Extract the string from the list
+                for s in source:
+                    if isinstance(s, list):
+                        self.logger.warning(f"Found nested list in data_sources: {s}")
+                        if s:
+                            normalized_sources.append(str(s[0]))
+                    else:
+                        normalized_sources.append(str(s))
+                self.logger.warning(f"Found list in data_sources: {source}, normalized to {[str(s) for s in source]}")
+            else:
+                normalized_sources.append(str(source))
+        
+        self.logger.info(f"Normalized sources: {normalized_sources}")
+        
         # Create a thread pool
-        with ThreadPoolExecutor(max_workers=len(data_sources)) as executor:
+        with ThreadPoolExecutor(max_workers=len(normalized_sources)) as executor:
             # Submit search tasks
             future_to_source = {}
-            for source in data_sources:
-                future = executor.submit(self._search_source, source, search_terms)
-                future_to_source[future] = source
+            for source in normalized_sources:
+                # Ensure source is a string
+                source_str = source
+                if isinstance(source, list):
+                    if source and len(source) > 0:
+                        if isinstance(source[0], list):
+                            if source[0] and len(source[0]) > 0:
+                                source_str = str(source[0][0])
+                            else:
+                                source_str = "kaggle"  # Default to kaggle if empty nested list
+                        else:
+                            source_str = str(source[0])
+                    else:
+                        source_str = "kaggle"  # Default to kaggle if empty list
+                    self.logger.warning(f"Source is still a list after normalization: {source}, using {source_str}")
+                else:
+                    source_str = str(source)
+                
+                # Clean up source string
+                for connector in ["kaggle", "huggingface", "google_dataset"]:
+                    if connector in source_str.lower():
+                        source_str = connector
+                        break
+                
+                self.logger.info(f"Submitting search task for source: {source_str}")
+                future = executor.submit(self._search_source, source_str, search_terms)
+                future_to_source[future] = source_str
             
             # Process results as they complete
             for future in as_completed(future_to_source):
@@ -148,6 +216,8 @@ class LLMAgent:
                     all_datasets.extend(datasets)
                 except Exception as e:
                     self.logger.error(f"Error searching {source}: {e}")
+                    import traceback
+                    self.logger.error(f"Traceback: {traceback.format_exc()}")
         
         return all_datasets
     
@@ -163,12 +233,84 @@ class LLMAgent:
             List[Dict[str, Any]]: List of datasets.
         """
         try:
-            # Get connector
+            # Log the input type and value
+            self.logger.info(f"_search_source called with source: {source}, type: {type(source)}")
+            
+            # Get connector - ensure source is a string, not a list
+            if isinstance(source, list):
+                self.logger.warning(f"Source is a list: {source}, extracting first element: {source[0] if source else None}")
+                source = source[0] if source else ""  # Take the first element if it's a list
+                
+                # If the first element is still a list, extract from that too
+                if isinstance(source, list):
+                    self.logger.warning(f"First element is still a list: {source}, extracting from it: {source[0] if source else None}")
+                    source = source[0] if source else ""
+            
+            # Convert source to string if it's not already
+            if not isinstance(source, str):
+                self.logger.warning(f"Converting non-string source to string: {source}")
+                source = str(source)
+            
+            # Special case: if source is the string representation of a list like "['kaggle']" or '["kaggle"]'
+            if source.startswith("[") and source.endswith("]"):
+                self.logger.warning(f"Source is a string representation of a list: {source}")
+                # Try to extract the actual name
+                for connector in ["kaggle", "huggingface", "google_dataset"]:
+                    if connector in source.lower():
+                        self.logger.info(f"Extracted connector name '{connector}' from '{source}'")
+                        source = connector
+                        break
+                
+                # If we couldn't extract a connector name, try to parse the string as a list
+                if source.startswith("[") and source.endswith("]"):
+                    try:
+                        # Handle both single and double quotes
+                        if "'" in source:
+                            # Handle ['kaggle']
+                            extracted = source.replace("[", "").replace("]", "").replace("'", "").strip()
+                        elif '"' in source:
+                            # Handle ["kaggle"]
+                            extracted = source.replace("[", "").replace("]", "").replace('"', "").strip()
+                        else:
+                            # Handle [kaggle]
+                            extracted = source.replace("[", "").replace("]", "").strip()
+                        
+                        self.logger.info(f"Extracted name from string representation: {extracted}")
+                        
+                        # Check if the extracted name is a valid connector
+                        for connector in ["kaggle", "huggingface", "google_dataset"]:
+                            if connector in extracted.lower():
+                                source = connector
+                                self.logger.info(f"Matched extracted name to connector: {source}")
+                                break
+                    except Exception as e:
+                        self.logger.warning(f"Failed to parse string representation of list: {source}, error: {e}")
+            
+            # Clean up source string - remove any additional text like "as per user's preference"
+            if isinstance(source, str):
+                # Common patterns to clean up
+                original_source = source
+                source = source.split(" as per ")[0].strip()
+                source = source.split(" based on ")[0].strip()
+                source = source.split(" according to ")[0].strip()
+                source = source.split(" following ")[0].strip()
+                
+                # Remove any remaining text after the connector name
+                for connector in ["kaggle", "huggingface", "google_dataset"]:
+                    if connector in source.lower():
+                        source = connector
+                        break
+                
+                if source != original_source:
+                    self.logger.info(f"Cleaned source from '{original_source}' to '{source}'")
+            
+            self.logger.info(f"Getting connector for source: {source}")
             connector = get_connector(source)
             
             # Search for each term
             all_results = []
             for term in search_terms:
+                self.logger.info(f"Searching for term: {term} in source: {source}")
                 results = connector.search_cached(term)
                 all_results.extend(results)
             
@@ -182,6 +324,8 @@ class LLMAgent:
             return [dataset.to_dict() for dataset in unique_results.values()]
         except Exception as e:
             self.logger.error(f"Error searching {source}: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
     
     def _analyze_datasets(self, query: str, datasets: List[Dict[str, Any]]) -> Dict[str, Any]:

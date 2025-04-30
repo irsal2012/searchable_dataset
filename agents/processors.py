@@ -19,11 +19,18 @@ class ResponseProcessor:
         Returns:
             Tuple[List[str], List[str], str]: Search terms, data sources, and explanation.
         """
+        import logging
+        logger = logging.getLogger("processors")
+        
+        logger.info(f"Processing search terms from response: {response[:100]}...")
+        
         # Extract search terms
         search_terms_match = re.search(r"Search Terms:\s*(.+?)(?:\n|$)", response, re.DOTALL)
         search_terms = []
         if search_terms_match:
             terms_text = search_terms_match.group(1).strip()
+            logger.info(f"Extracted search terms text: {terms_text}")
+            
             # Handle different formats (comma-separated, list with dashes, etc.)
             if "," in terms_text:
                 search_terms = [term.strip() for term in terms_text.split(",")]
@@ -37,6 +44,8 @@ class ResponseProcessor:
         data_sources = []
         if data_sources_match:
             sources_text = data_sources_match.group(1).strip()
+            logger.info(f"Extracted data sources text: {sources_text}")
+            
             # Handle different formats
             if "," in sources_text:
                 data_sources = [source.strip().lower() for source in sources_text.split(",")]
@@ -44,10 +53,59 @@ class ResponseProcessor:
                 data_sources = [source.strip().lstrip("- ").lower() for source in sources_text.split("\n")]
             else:
                 data_sources = [sources_text.lower()]
+            
+            # Clean up data sources - remove any additional text like "as per user's preference"
+            cleaned_sources = []
+            for source in data_sources:
+                # Extract just the connector name
+                if isinstance(source, str):
+                    # Common patterns to clean up
+                    source = source.split(" as per ")[0].strip()
+                    source = source.split(" based on ")[0].strip()
+                    source = source.split(" according to ")[0].strip()
+                    source = source.split(" following ")[0].strip()
+                    
+                    # Remove any remaining text after the connector name
+                    for connector in ["kaggle", "huggingface", "google_dataset"]:
+                        if connector in source.lower():
+                            source = connector
+                            break
+                
+                cleaned_sources.append(source)
+            
+            logger.info(f"Cleaned data sources: {cleaned_sources}")
+            data_sources = cleaned_sources
+            
+            logger.info(f"Initial data sources: {data_sources}")
+            
+            # Ensure each data source is a string, not a list
+            normalized_sources = []
+            for source in data_sources:
+                if isinstance(source, list):
+                    logger.warning(f"Found list in data sources: {source}")
+                    if source:
+                        normalized_sources.append(source[0])
+                    else:
+                        logger.warning("Empty list in data sources")
+                else:
+                    normalized_sources.append(source)
+            
+            if normalized_sources != data_sources:
+                logger.info(f"Normalized data sources: {normalized_sources}")
+                data_sources = normalized_sources
+            
+            # Check for any remaining lists and convert to strings
+            for i, source in enumerate(data_sources):
+                if isinstance(source, list):
+                    logger.warning(f"Still found list at index {i}: {source}")
+                    data_sources[i] = str(source)
         
         # Extract explanation
         explanation_match = re.search(r"Explanation:\s*(.+?)(?:\n\n|$)", response, re.DOTALL)
         explanation = explanation_match.group(1).strip() if explanation_match else ""
+        
+        logger.info(f"Final search terms: {search_terms}")
+        logger.info(f"Final data sources: {data_sources}")
         
         return search_terms, data_sources, explanation
     

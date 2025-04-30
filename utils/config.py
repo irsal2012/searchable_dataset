@@ -32,7 +32,7 @@ class Config:
         """Get configuration for the LLM."""
         return {
             "api_key": cls.OPENAI_API_KEY,
-            "model": "gpt-4",  # Default model
+            "model": "gpt-4o",  # Default model
             "temperature": 0.7,
             "max_tokens": 1000,
         }

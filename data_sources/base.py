@@ -3,7 +3,8 @@ Base connector class for dataset sources.
 """
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
-from utils import logger, cache
+from utils.logger import setup_logger
+from utils import cache
 
 class DatasetInfo:
     """Class representing dataset information."""
@@ -103,7 +104,7 @@ class BaseConnector(ABC):
             name: Name of the connector.
         """
         self.name = name
-        self.logger = logger.setup_logger(f"connector.{name}")
+        self.logger = setup_logger(f"connector.{name}")
     
     @abstractmethod
     def search(self, query: str, limit: int = 10) -> List[DatasetInfo]:

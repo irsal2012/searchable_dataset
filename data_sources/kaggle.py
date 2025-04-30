@@ -81,6 +81,13 @@ class KaggleConnector(BaseConnector):
             if key not in ["id", "name", "description", "url", "size", "license", "tags"]:
                 metadata[key] = value
         
+        # Get size safely
+        size = None
+        try:
+            size = dataset.size
+        except AttributeError:
+            self.logger.warning(f"Dataset {dataset.ref} does not have a size attribute")
+        
         # Create DatasetInfo
         return DatasetInfo(
             id=dataset.ref,
@@ -88,9 +95,9 @@ class KaggleConnector(BaseConnector):
             description=dataset.subtitle or "",
             source="Kaggle",
             url=f"https://www.kaggle.com/datasets/{dataset.ref}",
-            size=self._format_size(dataset.size),
+            size=self._format_size(size),
             format=None,  # Kaggle API doesn't provide format information
-            license=dataset.licenseName,
+            license=dataset.licenseName if hasattr(dataset, "licenseName") else "Unknown",
             tags=[tag.name for tag in dataset.tags] if hasattr(dataset, "tags") else [],
             metadata=metadata,
         )

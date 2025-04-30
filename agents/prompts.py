@@ -34,9 +34,11 @@ class PromptTemplates:
         
         Provide your response in the following format:
         
-        Search Terms: [list of search terms]
-        Explanation: [brief explanation of your reasoning]
-        Data Sources: [list of recommended data sources to search, e.g., "kaggle", "huggingface", "google_dataset"]
+        Search Terms: ["term1", "term2", "term3"]
+        Explanation: brief explanation of your reasoning
+        Data Sources: ["kaggle", "huggingface", "google_dataset"]
+        
+        Note: The search terms and data sources should be provided as arrays with each item in quotes.
         """
         
         # Add additional context if available

@@ -5,8 +5,7 @@ import time
 from typing import Dict, List, Any, Optional, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import openai
-from langchain_community.llms import OpenAI
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 
 from .prompts import PromptTemplates
@@ -30,7 +29,7 @@ class LLMAgent:
         self.chat_model = ChatOpenAI(
             model_name=self.llm_config["model"],
             temperature=self.llm_config["temperature"],
-            openai_api_key=self.llm_config["api_key"],
+            api_key=self.llm_config["api_key"],
         )
     
     def search_datasets(self, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -368,7 +367,7 @@ class LLMAgent:
         """
         try:
             # Call the LLM
-            response = self.chat_model([HumanMessage(content=prompt)])
+            response = self.chat_model.invoke([HumanMessage(content=prompt)])
             
             # Extract content
             content = response.content

@@ -3,7 +3,9 @@ Response processors for the LLM agent.
 """
 import re
 import json
+import ast
 from typing import Dict, List, Any, Optional, Tuple, Set
+from utils.logger import setup_logger
 
 class ResponseProcessor:
     """Process responses from the LLM."""
@@ -19,11 +21,81 @@ class ResponseProcessor:
         Returns:
             Tuple[List[str], List[str], str]: Search terms, data sources, and explanation.
         """
-        import logging
-        logger = logging.getLogger("processors")
+        logger = setup_logger("processors")
         
         logger.info(f"Processing search terms from response: {response[:100]}...")
         
+        # First, try to extract JSON from the response
+        try:
+            # Look for JSON pattern with code block
+            json_match = re.search(r"```json\s*(.+?)\s*```", response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+                logger.info(f"Found JSON string in response: {json_str}")
+                
+                try:
+                    json_data = json.loads(json_str)
+                    logger.info(f"Successfully parsed JSON data: {json_data}")
+                    
+                    # Extract search terms from JSON
+                    search_terms = []
+                    data_sources = []
+                    explanation = ""
+                    
+                    if "Search Terms" in json_data:
+                        search_terms = json_data["Search Terms"]
+                        logger.info(f"Extracted search terms from JSON: {search_terms}")
+                    
+                    # Extract data sources from JSON
+                    if "Data Sources" in json_data:
+                        data_sources = json_data["Data Sources"]
+                        logger.info(f"Extracted data sources from JSON: {data_sources}")
+                    
+                    # Extract explanation from JSON
+                    if "Explanation" in json_data:
+                        explanation = json_data["Explanation"]
+                        logger.info(f"Extracted explanation from JSON: {explanation}")
+                    
+                    return search_terms, data_sources, explanation
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse JSON string: {e}")
+            
+            # Try to find JSON without code block markers
+            curly_match = re.search(r"(\{.+\})", response, re.DOTALL)
+            if curly_match:
+                json_str = curly_match.group(1)
+                logger.info(f"Found potential JSON without code block: {json_str}")
+                
+                try:
+                    json_data = json.loads(json_str)
+                    logger.info(f"Successfully parsed JSON data without code block: {json_data}")
+                    
+                    # Extract search terms from JSON
+                    search_terms = []
+                    data_sources = []
+                    explanation = ""
+                    
+                    if "Search Terms" in json_data:
+                        search_terms = json_data["Search Terms"]
+                        logger.info(f"Extracted search terms from JSON: {search_terms}")
+                    
+                    # Extract data sources from JSON
+                    if "Data Sources" in json_data:
+                        data_sources = json_data["Data Sources"]
+                        logger.info(f"Extracted data sources from JSON: {data_sources}")
+                    
+                    # Extract explanation from JSON
+                    if "Explanation" in json_data:
+                        explanation = json_data["Explanation"]
+                        logger.info(f"Extracted explanation from JSON: {explanation}")
+                    
+                    return search_terms, data_sources, explanation
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse JSON without code block: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to extract JSON from response: {e}")
+        
+        # If JSON parsing fails, fall back to regex extraction
         # Extract search terms
         search_terms_match = re.search(r"Search Terms:\s*(.+?)(?:\n|$)", response, re.DOTALL)
         search_terms = []
@@ -31,13 +103,44 @@ class ResponseProcessor:
             terms_text = search_terms_match.group(1).strip()
             logger.info(f"Extracted search terms text: {terms_text}")
             
-            # Handle different formats (comma-separated, list with dashes, etc.)
-            if "," in terms_text:
-                search_terms = [term.strip() for term in terms_text.split(",")]
-            elif "\n" in terms_text:
-                search_terms = [term.strip().lstrip("- ") for term in terms_text.split("\n")]
-            else:
-                search_terms = [terms_text]
+            # Try to parse as JSON array first
+            try:
+                if terms_text.startswith("[") and terms_text.endswith("]"):
+                    # Try to parse as JSON
+                    parsed_terms = json.loads(terms_text)
+                    if isinstance(parsed_terms, list):
+                        search_terms = parsed_terms
+                        logger.info(f"Successfully parsed search terms as JSON array: {search_terms}")
+                    else:
+                        logger.warning(f"Parsed JSON is not a list: {parsed_terms}")
+                        search_terms = [terms_text]
+            except json.JSONDecodeError:
+                # Try to parse as Python literal
+                try:
+                    if terms_text.startswith("[") and terms_text.endswith("]"):
+                        parsed_terms = ast.literal_eval(terms_text)
+                        if isinstance(parsed_terms, list):
+                            search_terms = parsed_terms
+                            logger.info(f"Successfully parsed search terms as Python literal: {search_terms}")
+                        else:
+                            logger.warning(f"Parsed literal is not a list: {parsed_terms}")
+                            search_terms = [terms_text]
+                    else:
+                        # Fall back to regular parsing
+                        if "," in terms_text:
+                            search_terms = [term.strip() for term in terms_text.split(",")]
+                        elif "\n" in terms_text:
+                            search_terms = [term.strip().lstrip("- ") for term in terms_text.split("\n")]
+                        else:
+                            search_terms = [terms_text]
+                except (SyntaxError, ValueError):
+                    # Fall back to regular parsing
+                    if "," in terms_text:
+                        search_terms = [term.strip() for term in terms_text.split(",")]
+                    elif "\n" in terms_text:
+                        search_terms = [term.strip().lstrip("- ") for term in terms_text.split("\n")]
+                    else:
+                        search_terms = [terms_text]
         
         # Extract data sources
         data_sources_match = re.search(r"Data Sources:\s*(.+?)(?:\n|$)", response, re.DOTALL)

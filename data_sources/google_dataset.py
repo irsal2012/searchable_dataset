@@ -6,7 +6,6 @@ import requests
 from typing import List, Optional, Dict, Any
 from bs4 import BeautifulSoup
 from .base import BaseConnector, DatasetInfo
-from utils import logger
 
 class GoogleDatasetConnector(BaseConnector):
     """Connector for Google Dataset Search."""

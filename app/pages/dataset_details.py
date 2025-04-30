@@ -6,10 +6,10 @@ import pandas as pd
 import plotly.express as px
 from typing import Dict, Any, Optional
 
-from utils import logger
+from utils import setup_logger
 
 # Set up logger
-log = logger.setup_logger("dataset_details")
+log = setup_logger("dataset_details")
 
 # Set page configuration
 st.set_page_config(

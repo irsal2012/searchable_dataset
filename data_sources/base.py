@@ -149,7 +149,6 @@ class BaseConnector(ABC):
         self.logger.info(f"Searching for '{query}' (limit={limit})")
         return self.search(query, limit)
     
-    @cache.cached
     def get_dataset_cached(self, dataset_id: str) -> Optional[DatasetInfo]:
         """
         Get dataset information by ID with caching.
@@ -160,8 +159,34 @@ class BaseConnector(ABC):
         Returns:
             Optional[DatasetInfo]: Dataset information or None if not found.
         """
+        from utils.cache import cache
+        
         self.logger.info(f"Getting dataset '{dataset_id}'")
-        return self.get_dataset(dataset_id)
+        
+        # Generate cache key
+        import inspect
+        func_name = inspect.currentframe().f_code.co_name
+        key = cache._get_cache_key(func_name, (self.name, dataset_id), {})
+        
+        # Try to get from cache
+        cached_value = cache.get(key)
+        if cached_value is not None:
+            return cached_value
+        
+        try:
+            # Call the actual method
+            result = self.get_dataset(dataset_id)
+            
+            # Cache the result
+            if result is not None:
+                cache.set(key, result)
+            
+            return result
+        except Exception as e:
+            # If there's an error, clear the cache for this key
+            cache.clear(key)
+            self.logger.error(f"Error getting dataset '{dataset_id}': {e}")
+            return None
     
     def download_dataset(self, dataset_id: str) -> Optional[str]:
         """

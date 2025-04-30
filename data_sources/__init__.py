@@ -124,11 +124,29 @@ def get_connector(name: str) -> BaseConnector:
     name = name.split(" according to ")[0].strip()
     name = name.split(" following ")[0].strip()
     
-    # Remove any remaining text after the connector name
-    for connector in CONNECTORS.keys():
-        if connector in name.lower():
-            name = connector
-            break
+    # Normalize the name - remove spaces and convert to lowercase
+    name = name.lower().replace(" ", "")
+    
+    # Map common variations to the correct connector names
+    name_mapping = {
+        "huggingface": "huggingface",
+        "hugging": "huggingface",
+        "hf": "huggingface",
+        "kaggle": "kaggle",
+        "google": "google_dataset",
+        "googledataset": "google_dataset",
+        "google_dataset": "google_dataset",
+        "googledata": "google_dataset"
+    }
+    
+    if name in name_mapping:
+        name = name_mapping[name]
+    else:
+        # Try to match with any of the available connectors
+        for connector in CONNECTORS.keys():
+            if connector in name.lower():
+                name = connector
+                break
     
     if name != original_name:
         logger.info(f"Cleaned name from '{original_name}' to '{name}'")
@@ -140,4 +158,54 @@ def get_connector(name: str) -> BaseConnector:
         raise ValueError(f"Connector '{name}' not found. Available connectors: {list(CONNECTORS.keys())}")
     
     logger.info(f"Found connector for name: {name}")
-    return CONNECTORS[name]()
+    
+    # Create the connector instance
+    connector_instance = CONNECTORS[name]()
+    
+    # Ensure the connector has the download_dataset method
+    if not hasattr(connector_instance, "download_dataset"):
+        logger.warning(f"Adding download_dataset method to {name} connector")
+        
+        # Add the download_dataset method to the connector instance
+        from utils.downloader import downloader
+        
+        def download_dataset(self, dataset_id):
+            """
+            Download a dataset.
+            
+            Args:
+                dataset_id: Dataset ID.
+                
+            Returns:
+                Optional[str]: Download task ID or None if download failed.
+            """
+            # Get dataset information
+            dataset = self.get_dataset_cached(dataset_id)
+            if not dataset:
+                self.logger.error(f"Dataset not found: {dataset_id}")
+                return None
+            
+            # Check if URL is available
+            if not dataset.url:
+                self.logger.error(f"Dataset URL not available: {dataset_id}")
+                return None
+            
+            # Start download
+            self.logger.info(f"Downloading dataset: {dataset.name} ({dataset_id})")
+            
+            # Use the downloader to start the download
+            download_id = downloader.download(
+                dataset_id=dataset_id,
+                dataset_name=dataset.name,
+                source=self.name,
+                url=dataset.url,
+                connector_download_func=self._download_dataset_impl,
+            )
+            
+            return download_id
+        
+        # Add the method to the instance
+        import types
+        connector_instance.download_dataset = types.MethodType(download_dataset, connector_instance)
+    
+    return connector_instance

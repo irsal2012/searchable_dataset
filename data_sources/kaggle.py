@@ -59,7 +59,28 @@ class KaggleConnector(BaseConnector):
         """
         try:
             # Get dataset information
-            dataset = kaggle.api.dataset_view(dataset_id)
+            # The Kaggle API doesn't have a direct method to get a single dataset by ID
+            # So we'll search for it and filter the results
+            parts = dataset_id.split('/')
+            if len(parts) != 2:
+                self.logger.error(f"Invalid Kaggle dataset ID format: {dataset_id}")
+                return None
+                
+            username, dataset_name = parts
+            
+            # Search for datasets by this user
+            datasets = kaggle.api.dataset_list(user=username)
+            
+            # Find the specific dataset
+            dataset = None
+            for d in datasets:
+                if d.ref == dataset_id:
+                    dataset = d
+                    break
+            
+            if not dataset:
+                self.logger.error(f"Dataset not found: {dataset_id}")
+                return None
             
             # Convert to DatasetInfo
             return self._convert_to_dataset_info(dataset)

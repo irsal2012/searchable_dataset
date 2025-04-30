@@ -45,16 +45,40 @@ class LLMAgent:
         """
         self.logger.info(f"Searching datasets for query: {query}")
         
+        # Check if user has specified data sources in the context
+        user_data_sources = None
+        if context and "user_preferences" in context and "data_sources" in context["user_preferences"]:
+            user_data_sources = context["user_preferences"]["data_sources"]
+            self.logger.info(f"User specified data sources: {user_data_sources}")
+        
         # Generate search terms using LLM
-        search_terms, data_sources, explanation = self._generate_search_terms(query, context)
+        search_terms, llm_data_sources, explanation = self._generate_search_terms(query, context)
+        
+        # ALWAYS use user-specified data sources if available, and IGNORE LLM-suggested ones
+        if user_data_sources:
+            data_sources = user_data_sources
+            self.logger.info(f"Using ONLY user-specified data sources: {data_sources}")
+        else:
+            data_sources = llm_data_sources
+            self.logger.info(f"No user preferences found, using LLM-suggested data sources: {data_sources}")
         
         # If no data sources specified, use all available
         if not data_sources:
             from data_sources import CONNECTORS
             data_sources = list(CONNECTORS.keys())
+            self.logger.info(f"No data sources specified, using all available: {data_sources}")
         
         # Search datasets from multiple sources in parallel
-        all_datasets = self._search_multiple_sources(search_terms, data_sources)
+        # STRICTLY use only user-specified data sources if available
+        if user_data_sources:
+            self.logger.info(f"Strictly using ONLY user-specified data sources: {user_data_sources}")
+            search_sources = user_data_sources
+            # Update data_sources to reflect what was actually used
+            data_sources = user_data_sources
+        else:
+            search_sources = data_sources
+            
+        all_datasets = self._search_multiple_sources(search_terms, search_sources)
         
         # Analyze datasets using LLM
         analysis = self._analyze_datasets(query, all_datasets)
@@ -173,6 +197,20 @@ class LLMAgent:
                 normalized_sources.append(str(source))
         
         self.logger.info(f"Normalized sources: {normalized_sources}")
+        
+        # Filter out any sources that are not in the allowed list
+        allowed_sources = ["kaggle", "huggingface", "google_dataset"]
+        filtered_sources = []
+        for source in normalized_sources:
+            source_str = str(source).lower()
+            for allowed in allowed_sources:
+                if allowed in source_str:
+                    filtered_sources.append(allowed)
+                    break
+        
+        if filtered_sources != normalized_sources:
+            self.logger.info(f"Filtered sources: {filtered_sources}")
+            normalized_sources = filtered_sources
         
         # Create a thread pool
         with ThreadPoolExecutor(max_workers=len(normalized_sources)) as executor:
@@ -302,6 +340,23 @@ class LLMAgent:
                 
                 if source != original_source:
                     self.logger.info(f"Cleaned source from '{original_source}' to '{source}'")
+            
+            # Validate that the source is one of the allowed connectors
+            allowed_connectors = ["kaggle", "huggingface", "google_dataset"]
+            if source not in allowed_connectors:
+                self.logger.warning(f"Source '{source}' is not in the allowed connectors list: {allowed_connectors}")
+                # Try to match with any of the allowed connectors
+                matched = False
+                for connector in allowed_connectors:
+                    if connector in source.lower():
+                        source = connector
+                        matched = True
+                        self.logger.info(f"Matched source to connector: {source}")
+                        break
+                
+                if not matched:
+                    self.logger.error(f"Could not match source '{source}' to any allowed connector")
+                    return []
             
             self.logger.info(f"Getting connector for source: {source}")
             connector = get_connector(source)

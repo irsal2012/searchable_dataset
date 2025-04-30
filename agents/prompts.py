@@ -46,7 +46,18 @@ class PromptTemplates:
             prompt += f"\n\nPrevious searches: {context['previous_searches']}"
         
         if context.get("user_preferences"):
-            prompt += f"\n\nUser preferences: {context['user_preferences']}"
+            user_prefs = context["user_preferences"]
+            prompt += f"\n\nUser preferences: {user_prefs}"
+            
+            # If user has specified data sources, make it clear in the prompt
+            if "data_sources" in user_prefs and user_prefs["data_sources"]:
+                prompt += f"""
+                
+                CRITICAL INSTRUCTION: The user has specifically selected ONLY the following data sources: {user_prefs["data_sources"]}
+                You MUST ONLY suggest these exact data sources in your response. DO NOT suggest any other data sources.
+                Your Data Sources response MUST be EXACTLY: {user_prefs["data_sources"]}
+                Any other data sources will be ignored, and only the user-selected ones will be used.
+                """
         
         return prompt
     

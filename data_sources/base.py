@@ -2,9 +2,10 @@
 Base connector class for dataset sources.
 """
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Callable
 from utils.logger import setup_logger
 from utils import cache
+from utils.downloader import downloader
 
 class DatasetInfo:
     """Class representing dataset information."""
@@ -161,3 +162,61 @@ class BaseConnector(ABC):
         """
         self.logger.info(f"Getting dataset '{dataset_id}'")
         return self.get_dataset(dataset_id)
+    
+    def download_dataset(self, dataset_id: str) -> Optional[str]:
+        """
+        Download a dataset.
+        
+        Args:
+            dataset_id: Dataset ID.
+            
+        Returns:
+            Optional[str]: Download task ID or None if download failed.
+        """
+        # Get dataset information
+        dataset = self.get_dataset_cached(dataset_id)
+        if not dataset:
+            self.logger.error(f"Dataset not found: {dataset_id}")
+            return None
+        
+        # Check if URL is available
+        if not dataset.url:
+            self.logger.error(f"Dataset URL not available: {dataset_id}")
+            return None
+        
+        # Start download
+        self.logger.info(f"Downloading dataset: {dataset.name} ({dataset_id})")
+        
+        # Use the downloader to start the download
+        download_id = downloader.download(
+            dataset_id=dataset_id,
+            dataset_name=dataset.name,
+            source=self.name,
+            url=dataset.url,
+            connector_download_func=self._download_dataset_impl,
+        )
+        
+        return download_id
+    
+    def _download_dataset_impl(
+        self, 
+        dataset_id: str, 
+        target_path: str, 
+        progress_callback: Callable[[float], None],
+        cancel_event: Any,
+    ) -> None:
+        """
+        Implementation of dataset download.
+        
+        This method can be overridden by subclasses to provide custom download logic.
+        The default implementation uses the dataset URL for direct download.
+        
+        Args:
+            dataset_id: Dataset ID.
+            target_path: Path to save the dataset.
+            progress_callback: Callback function to report progress (0.0 to 1.0).
+            cancel_event: Event to check if download should be cancelled.
+        """
+        # Default implementation does nothing, as the downloader will use the URL
+        # Subclasses can override this method to provide custom download logic
+        pass

@@ -178,3 +178,165 @@ class GoogleDatasetConnector(BaseConnector):
         except Exception as e:
             self.logger.error(f"Error extracting dataset info: {e}")
             return None
+    
+    def download_dataset(self, dataset_id: str) -> Optional[str]:
+        """
+        Download a dataset.
+        
+        Args:
+            dataset_id: Dataset ID.
+            
+        Returns:
+            Optional[str]: Download task ID or None if download failed.
+        """
+        # Get dataset information
+        dataset = self.get_dataset_cached(dataset_id)
+        if not dataset:
+            self.logger.error(f"Dataset not found: {dataset_id}")
+            return None
+        
+        # Check if URL is available
+        if not dataset.url:
+            self.logger.error(f"Dataset URL not available: {dataset_id}")
+            return None
+        
+        # Start download
+        self.logger.info(f"Downloading dataset: {dataset.name} ({dataset_id})")
+        
+        # Use the downloader to start the download
+        from utils.downloader import downloader
+        download_id = downloader.download(
+            dataset_id=dataset_id,
+            dataset_name=dataset.name,
+            source=self.name,
+            url=dataset.url,
+            connector_download_func=self._download_dataset_impl,
+        )
+        
+        return download_id
+    
+    def _download_dataset_impl(
+        self, 
+        dataset_id: str, 
+        target_path: str, 
+        progress_callback: callable,
+        cancel_event: Any,
+    ) -> None:
+        """
+        Implementation of dataset download for Google Dataset Search.
+        
+        Args:
+            dataset_id: Dataset ID.
+            target_path: Path to save the dataset.
+            progress_callback: Callback function to report progress (0.0 to 1.0).
+            cancel_event: Event to check if download should be cancelled.
+        """
+        import os
+        import time
+        import requests
+        
+        try:
+            # Get dataset information
+            dataset = self.get_dataset_cached(dataset_id)
+            if not dataset:
+                raise ValueError(f"Dataset not found: {dataset_id}")
+            
+            # Set initial progress
+            progress_callback(0.1)
+            
+            # Check if cancelled
+            if cancel_event.is_set():
+                return
+            
+            # Get download URL - for Google Dataset Search, the URL is the dataset page
+            # We need to extract the actual download link from the page
+            download_url = dataset.url
+            
+            # Download the dataset page
+            self.logger.info(f"Accessing Google dataset page: {dataset_id}")
+            response = requests.get(download_url, headers=self.headers)
+            response.raise_for_status()
+            
+            # Parse HTML response to find download link
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, "lxml")
+            
+            # Look for download links
+            download_links = []
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                text = a.text.strip().lower()
+                
+                # Check if this looks like a download link
+                if any(keyword in text for keyword in ["download", "get data", "access data"]):
+                    download_links.append(href)
+                
+                # Also check for common file extensions
+                if any(href.endswith(ext) for ext in [".csv", ".json", ".xml", ".zip", ".tar.gz"]):
+                    download_links.append(href)
+            
+            if not download_links:
+                raise ValueError(f"No download links found on the dataset page: {download_url}")
+            
+            # Use the first download link
+            file_url = download_links[0]
+            
+            # If the URL is relative, make it absolute
+            if not file_url.startswith("http"):
+                from urllib.parse import urljoin
+                file_url = urljoin(download_url, file_url)
+            
+            self.logger.info(f"Found download link: {file_url}")
+            
+            # Update progress
+            progress_callback(0.2)
+            
+            # Check if cancelled
+            if cancel_event.is_set():
+                return
+            
+            # Download the file
+            self.logger.info(f"Downloading file from: {file_url}")
+            file_response = requests.get(file_url, stream=True, headers=self.headers)
+            file_response.raise_for_status()
+            
+            # Get file size if available
+            file_size = int(file_response.headers.get("content-length", 0))
+            
+            # Create parent directory if it doesn't exist
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            
+            # Download the file with progress tracking
+            downloaded_size = 0
+            with open(target_path, "wb") as f:
+                for chunk in file_response.iter_content(chunk_size=8192):
+                    if cancel_event.is_set():
+                        # Clean up
+                        f.close()
+                        if os.path.exists(target_path):
+                            os.remove(target_path)
+                        return
+                    
+                    if chunk:
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        
+                        # Update progress
+                        if file_size > 0:
+                            progress = 0.2 + 0.8 * (downloaded_size / file_size)
+                            progress_callback(min(progress, 0.99))
+                        else:
+                            # If file size is unknown, update progress based on time
+                            progress_callback(min(0.2 + (time.time() % 10) / 100, 0.99))
+            
+            # Final progress update
+            progress_callback(1.0)
+            
+            self.logger.info(f"Google dataset downloaded: {dataset_id} -> {target_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Error downloading Google dataset '{dataset_id}': {e}")
+            # Clean up any partial downloads
+            if os.path.exists(target_path):
+                os.remove(target_path)
+            raise

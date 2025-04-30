@@ -1,12 +1,14 @@
 """
 Dataset details page for the Streamlit application.
 """
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from typing import Dict, Any, Optional
 
 from utils import setup_logger
+from app.components import download_button, downloads_sidebar
 
 # Set up logger
 log = setup_logger("dataset_details")
@@ -26,7 +28,16 @@ def display_dataset_details(dataset: Dict[str, Any]) -> None:
     Args:
         dataset: Dataset information.
     """
-    st.title(f"Dataset: {dataset['name']}")
+    # Display downloads in sidebar
+    downloads_sidebar()
+    
+    # Display dataset title and download button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.title(f"Dataset: {dataset['name']}")
+    with col2:
+        # Add download button
+        download_button(dataset, key="details_page")
     
     # Create tabs for different sections
     tab1, tab2, tab3 = st.tabs(["Overview", "Metadata", "Visualization"])
@@ -71,9 +82,8 @@ def display_dataset_details(dataset: Dict[str, Any]) -> None:
         st.subheader("Visualization")
         st.info("To visualize this dataset, you would need to download it first.")
         
-        # Add a download button
-        if "url" in dataset and dataset["url"]:
-            st.markdown(f"[Download Dataset]({dataset['url']})")
+        # Add download button
+        download_button(dataset, key="viz_page")
         
         # Show a sample visualization (placeholder)
         st.markdown("### Sample Visualization")

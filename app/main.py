@@ -13,6 +13,7 @@ from agents import LLMAgent
 from data_sources import get_connector, CONNECTORS
 from utils import config
 from utils.logger import setup_logger
+from app.components import download_button, downloads_sidebar
 
 # Set up logger
 log = setup_logger("streamlit_app")
@@ -79,6 +80,9 @@ with st.sidebar:
         for i, query in enumerate(st.session_state.search_history):
             if st.button(f"{query}", key=f"history_{i}"):
                 st.session_state.search_query = query
+    
+    # Display downloads in sidebar
+    downloads_sidebar()
 
 # Main content
 st.title("Dataset Search")
@@ -179,6 +183,26 @@ if st.session_state.search_results:
         # Display as a table
         st.dataframe(df[display_columns], use_container_width=True)
         
+        # Display datasets with download buttons
+        st.subheader("Quick Actions")
+        
+        # Create rows of datasets with download buttons
+        num_cols = 3  # Number of columns in the grid
+        datasets_list = results["datasets"]
+        
+        # Create rows of columns
+        for i in range(0, len(datasets_list), num_cols):
+            cols = st.columns(num_cols)
+            
+            # Fill each column with a dataset
+            for j in range(num_cols):
+                idx = i + j
+                if idx < len(datasets_list):
+                    with cols[j]:
+                        dataset_item = datasets_list[idx]
+                        st.markdown(f"**{dataset_item['name']}**")
+                        download_button(dataset_item, key=f"search_result_{idx}")
+        
         # Dataset selection
         selected_index = st.selectbox(
             "Select a dataset for more details",
@@ -195,7 +219,13 @@ if st.session_state.search_results:
 if st.session_state.selected_dataset:
     dataset = st.session_state.selected_dataset
     
-    st.subheader(f"Dataset Details: {dataset['name']}")
+    # Display dataset title and download button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.subheader(f"Dataset Details: {dataset['name']}")
+    with col2:
+        # Add download button
+        download_button(dataset, key="main_page")
     
     # Create tabs for different sections
     tab1, tab2, tab3 = st.tabs(["Overview", "Metadata", "Analysis"])

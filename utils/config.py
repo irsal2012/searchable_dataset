@@ -20,7 +20,12 @@ class Config:
     # Application Settings
     DEBUG: bool = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    CACHE_EXPIRY: int = int(os.getenv("CACHE_EXPIRY", "3600"))
+    
+    # Parse CACHE_EXPIRY and strip any comments
+    _cache_expiry_value = os.getenv("CACHE_EXPIRY", "3600")
+    if "#" in _cache_expiry_value:
+        _cache_expiry_value = _cache_expiry_value.split("#")[0].strip()
+    CACHE_EXPIRY: int = int(_cache_expiry_value)
     
     @classmethod
     def get_llm_config(cls) -> Dict[str, Any]:

@@ -1,0 +1,171 @@
+"""
+Response processors for the LLM agent.
+"""
+import re
+import json
+from typing import Dict, List, Any, Optional, Tuple, Set
+
+class ResponseProcessor:
+    """Process responses from the LLM."""
+    
+    @staticmethod
+    def process_search_terms(response: str) -> Tuple[List[str], List[str], str]:
+        """
+        Process search terms from LLM response.
+        
+        Args:
+            response: LLM response.
+            
+        Returns:
+            Tuple[List[str], List[str], str]: Search terms, data sources, and explanation.
+        """
+        # Extract search terms
+        search_terms_match = re.search(r"Search Terms:\s*(.+?)(?:\n|$)", response, re.DOTALL)
+        search_terms = []
+        if search_terms_match:
+            terms_text = search_terms_match.group(1).strip()
+            # Handle different formats (comma-separated, list with dashes, etc.)
+            if "," in terms_text:
+                search_terms = [term.strip() for term in terms_text.split(",")]
+            elif "\n" in terms_text:
+                search_terms = [term.strip().lstrip("- ") for term in terms_text.split("\n")]
+            else:
+                search_terms = [terms_text]
+        
+        # Extract data sources
+        data_sources_match = re.search(r"Data Sources:\s*(.+?)(?:\n|$)", response, re.DOTALL)
+        data_sources = []
+        if data_sources_match:
+            sources_text = data_sources_match.group(1).strip()
+            # Handle different formats
+            if "," in sources_text:
+                data_sources = [source.strip().lower() for source in sources_text.split(",")]
+            elif "\n" in sources_text:
+                data_sources = [source.strip().lstrip("- ").lower() for source in sources_text.split("\n")]
+            else:
+                data_sources = [sources_text.lower()]
+        
+        # Extract explanation
+        explanation_match = re.search(r"Explanation:\s*(.+?)(?:\n\n|$)", response, re.DOTALL)
+        explanation = explanation_match.group(1).strip() if explanation_match else ""
+        
+        return search_terms, data_sources, explanation
+    
+    @staticmethod
+    def process_dataset_analysis(response: str) -> Dict[str, Any]:
+        """
+        Process dataset analysis from LLM response.
+        
+        Args:
+            response: LLM response.
+            
+        Returns:
+            Dict[str, Any]: Processed analysis.
+        """
+        # Extract ranking
+        ranking_match = re.search(r"Ranking:(.*?)(?:Detailed Analysis:|$)", response, re.DOTALL)
+        ranking = []
+        if ranking_match:
+            ranking_text = ranking_match.group(1).strip()
+            ranking_lines = [line.strip() for line in ranking_text.split("\n") if line.strip()]
+            
+            for line in ranking_lines:
+                # Extract dataset name and explanation
+                rank_match = re.match(r"\d+\.\s*([^-]+)\s*-\s*(.+)", line)
+                if rank_match:
+                    dataset_name = rank_match.group(1).strip()
+                    explanation = rank_match.group(2).strip()
+                    ranking.append({"name": dataset_name, "explanation": explanation})
+        
+        # Extract detailed analysis
+        analysis_match = re.search(r"Detailed Analysis:(.*?)(?:Overall Recommendation:|$)", response, re.DOTALL)
+        analysis = {}
+        if analysis_match:
+            analysis_text = analysis_match.group(1).strip()
+            
+            # Split by dataset names
+            dataset_sections = re.split(r"\n\s*\[([^\]]+)\]:\s*\n", analysis_text)
+            
+            # Process each dataset section
+            for i in range(1, len(dataset_sections), 2):
+                dataset_name = dataset_sections[i].strip()
+                dataset_analysis = dataset_sections[i+1].strip()
+                
+                # Extract relevance
+                relevance_match = re.search(r"Relevance:\s*([^\n]+)", dataset_analysis)
+                relevance = relevance_match.group(1).strip() if relevance_match else "Unknown"
+                
+                # Extract strengths
+                strengths_match = re.search(r"Strengths:\s*([^\n]+)", dataset_analysis)
+                strengths = strengths_match.group(1).strip() if strengths_match else "Unknown"
+                
+                # Extract limitations
+                limitations_match = re.search(r"Limitations:\s*([^\n]+)", dataset_analysis)
+                limitations = limitations_match.group(1).strip() if limitations_match else "Unknown"
+                
+                # Extract recommendation
+                recommendation_match = re.search(r"Recommendation:\s*([^\n]+)", dataset_analysis)
+                recommendation = recommendation_match.group(1).strip() if recommendation_match else "Unknown"
+                
+                analysis[dataset_name] = {
+                    "relevance": relevance,
+                    "strengths": strengths,
+                    "limitations": limitations,
+                    "recommendation": recommendation,
+                }
+        
+        # Extract overall recommendation
+        recommendation_match = re.search(r"Overall Recommendation:\s*(.+?)(?:\n\n|$)", response, re.DOTALL)
+        overall_recommendation = recommendation_match.group(1).strip() if recommendation_match else ""
+        
+        return {
+            "ranking": ranking,
+            "analysis": analysis,
+            "overall_recommendation": overall_recommendation,
+        }
+    
+    @staticmethod
+    def process_dataset_recommendation(response: str) -> str:
+        """
+        Process dataset recommendation from LLM response.
+        
+        Args:
+            response: LLM response.
+            
+        Returns:
+            str: Processed recommendation.
+        """
+        # For recommendation, we just return the full response as it should be concise
+        return response.strip()
+    
+    @staticmethod
+    def extract_json_from_response(response: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract JSON from LLM response.
+        
+        Args:
+            response: LLM response.
+            
+        Returns:
+            Optional[Dict[str, Any]]: Extracted JSON or None if not found.
+        """
+        # Look for JSON pattern
+        json_match = re.search(r"```json\s*(.+?)\s*```", response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                return None
+        
+        # Try to find JSON without code block markers
+        try:
+            # Look for patterns that might indicate JSON
+            curly_match = re.search(r"(\{.+\})", response, re.DOTALL)
+            if curly_match:
+                json_str = curly_match.group(1)
+                return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+        
+        return None

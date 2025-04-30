@@ -164,7 +164,10 @@ def download_progress(download_id: str) -> None:
             
             if status_text == DownloadStatus.DOWNLOADING:
                 # Show cancel button
-                if st.button("Cancel", key=f"cancel_{download_id}"):
+                # Add timestamp to key to ensure uniqueness
+                import time
+                timestamp = int(time.time() * 1000)
+                if st.button("Cancel", key=f"cancel_{download_id}_{timestamp}"):
                     downloader.cancel_download(download_id)
                     st.rerun()
             
@@ -175,7 +178,9 @@ def download_progress(download_id: str) -> None:
                     st.markdown(f"Saved to: **{file_path}**")
                 
                 # Clear button
-                if st.button("Clear", key=f"clear_{download_id}"):
+                import time
+                timestamp = int(time.time() * 1000)
+                if st.button("Clear", key=f"clear_{download_id}_{timestamp}"):
                     del st.session_state.downloads[download_id]
                     st.rerun()
             
@@ -185,7 +190,9 @@ def download_progress(download_id: str) -> None:
                 st.error(f"Error: {error}")
                 
                 # Retry button
-                if st.button("Retry", key=f"retry_{download_id}"):
+                import time
+                timestamp = int(time.time() * 1000)
+                if st.button("Retry", key=f"retry_{download_id}_{timestamp}"):
                     # Get dataset information
                     dataset_id = status.get("dataset_id")
                     source = status.get("source")
@@ -209,7 +216,8 @@ def download_progress(download_id: str) -> None:
                     st.rerun()
                 
                 # Clear button
-                if st.button("Clear", key=f"clear_error_{download_id}"):
+                timestamp2 = int(time.time() * 1000) + 1
+                if st.button("Clear", key=f"clear_error_{download_id}_{timestamp2}"):
                     del st.session_state.downloads[download_id]
                     st.rerun()
             
@@ -218,7 +226,9 @@ def download_progress(download_id: str) -> None:
                 st.warning("Download cancelled")
                 
                 # Clear button
-                if st.button("Clear", key=f"clear_cancelled_{download_id}"):
+                import time
+                timestamp = int(time.time() * 1000)
+                if st.button("Clear", key=f"clear_cancelled_{download_id}_{timestamp}"):
                     del st.session_state.downloads[download_id]
                     st.rerun()
         
@@ -312,6 +322,8 @@ def downloads_sidebar() -> None:
             st.sidebar.markdown(f"❌ {dataset_name} ({status_text})")
     
     # Clear all button
-    if st.sidebar.button("Clear All Downloads"):
+    import time
+    timestamp = int(time.time() * 1000)
+    if st.sidebar.button("Clear All Downloads", key=f"clear_all_{timestamp}"):
         st.session_state.downloads = {}
         st.rerun()
